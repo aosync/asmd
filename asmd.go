@@ -20,6 +20,11 @@ type NavbarTreeFile struct {
 	intended bool
 }
 
+type GenContext struct {
+	base string
+	path string
+}
+
 func notFound(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte("Path not found."))
 }
@@ -27,17 +32,22 @@ func notFound(w http.ResponseWriter, r *http.Request) {
 func getTree(path string, goal string, files *[]NavbarTreeFile, level int) {
 	filepath.Walk(path, func(p string, info os.FileInfo, err error) error {
 		basePath := filepath.Base(p)
+
 		if p == path {
 			return nil
 		}
+
 		var postTree *[]NavbarTreeFile = &[]NavbarTreeFile{}
 		intended := false
+
+		// TODO(aosync): There is certainly a way to improve this.
 		if strings.HasPrefix(goal+"/", p+"/") {
 			intended = true
 			if info.IsDir() {
 				getTree(p, goal, postTree, level+1)
 			}
 		}
+
 		if basePath != View {
 			navbarElem := NavbarTreeFile{
 				path:     p,
@@ -49,41 +59,46 @@ func getTree(path string, goal string, files *[]NavbarTreeFile, level int) {
 			*files = append(*files, navbarElem)
 			*files = append(*files, *postTree...)
 		}
+
 		if info.IsDir() {
 			return filepath.SkipDir
 		}
+
 		return nil
 	})
 }
 
-func generateASMDHTML(dirPath string, filename string) string {
-	var res string
-	res += "<html>"
-	res += "Directory: " + dirPath + "<br />"
-	res += "File: " + filename + "<br />"
+func generateNavbarTree(gctx GenContext) string {
+	var nav string
+
 	var files *[]NavbarTreeFile = &[]NavbarTreeFile{}
-	getTree(".", filename[2:], files, 0)
+	getTree(".", gctx.path[2:], files, 0)
 	for _, s := range *files {
-		res += "<a href=\"/" + s.path
+		nav += "<a href=\"/" + s.path
 		if s.dir {
-			res += "/"
+			nav += "/"
 		}
-		res += "\">"
-		res += strings.Repeat("&nbsp;", s.level*4)
+		nav += "\">"
+		nav += strings.Repeat("&nbsp;", s.level*4)
 		if s.intended {
-			res += "+"
+			nav += "+"
 		} else {
-			res += "-"
+			nav += "-"
 		}
-		res += s.base
-		if s.dir {
-			res += "/"
-		}
-		res += "</a>"
-		res += "<br />"
+		nav += s.base
+		nav += "</a>"
+		nav += "<br />"
 	}
-	res += "</html>"
-	return res
+	return nav
+}
+
+func generateASMDHTML(gctx GenContext) string {
+	// Temporary
+	var code string
+	code += "<html>"
+	code += generateNavbarTree(gctx)
+	code += "</html>"
+	return code
 }
 
 func handler(w http.ResponseWriter, r *http.Request) {
@@ -91,42 +106,53 @@ func handler(w http.ResponseWriter, r *http.Request) {
 
 	path := "." + r.URL.Path
 	retried := false
+
 RetryMD:
 	f, err := os.Stat(path)
+
 	if err != nil {
 		if !retried {
 			path = path + MDSuffix
 			retried = true
 
-			// If required path is not found, retry with `.md` appended
 			goto RetryMD
 		}
-		// Otherwise, path not found.
+
 		notFound(w, r)
 		return
 	}
 
 	if f.IsDir() {
-		//	If the path is a directory, I should check if view.md exists in this directory. If it doesn't, then the path is invalid.
+		// TODO(aosync): Use correct path manipulation, notably with path.Join
+		if !strings.HasSuffix(path, "/") {
+			path += "/"
+		}
+
 		viewPath := path + View
 		_, err := os.Stat(viewPath)
+
 		if err != nil {
 			notFound(w, r)
 			return
 		}
 
-		// If it does, generate the HTML for a beautiful view :^)
-		view := generateASMDHTML(path, viewPath)
+		view := generateASMDHTML(GenContext{
+			base: path,
+			path: viewPath,
+		})
 		w.Write([]byte(view))
+
 		return
-	} else if retried || strings.HasSuffix(path, MDSuffix) {
-		// If the path is a MD file, serve it within the view too, because I don't want all pages to actually be folders.
-		view := generateASMDHTML(filepath.Dir(path), path)
+	} else if strings.HasSuffix(path, MDSuffix) {
+		view := generateASMDHTML(GenContext{
+			base: filepath.Dir(path),
+			path: path,
+		})
 		w.Write([]byte(view))
+
 		return
 	}
 
-	// If the path is anything else, serve it raw.
 	contents, _ := ioutil.ReadFile(path)
 	w.Write(contents)
 }
