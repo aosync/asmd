@@ -38,7 +38,7 @@ func RenderList(elems []NavbarTreeFile) string {
 func (v NavbarTreeFile) Render() string {
 	var li string
 	li += "<li>"
-	li += "<a href=\"/" + v.path + "\" style=\"font-weight: bold;\">"
+	li += "<a href=\"/" + v.path + "\">"
 	if v.intended {
 		li += "+"
 	} else {
@@ -128,7 +128,7 @@ func RenderBody(gctx GenContext) string {
 	var body string
 	body += "<body>"
 	body += RenderNavbar(gctx)
-	body += "<article class =\"rest\">"
+	body += "<article class=\"rest\">"
 	article, _ := ioutil.ReadFile(gctx.path)
 
 	htmlFlags := html.CommonFlags | html.HrefTargetBlank
@@ -142,9 +142,10 @@ func RenderBody(gctx GenContext) string {
 	return body
 }
 
-func generateASMDHTML(gctx GenContext) string {
+func RenderPage(gctx GenContext) string {
 	// Temporary
 	var code string
+	code += "<!doctype html>"
 	code += "<html>"
 	code += "<style rel=\"stylesheet\">"
 	style, _ := ioutil.ReadFile("style.css")
@@ -190,7 +191,7 @@ RetryMD:
 			return
 		}
 
-		view := generateASMDHTML(GenContext{
+		view := RenderPage(GenContext{
 			base: path,
 			path: viewPath,
 		})
@@ -198,7 +199,7 @@ RetryMD:
 
 		return
 	} else if strings.HasSuffix(path, MDSuffix) {
-		view := generateASMDHTML(GenContext{
+		view := RenderPage(GenContext{
 			base: filepath.Dir(path),
 			path: path,
 		})
