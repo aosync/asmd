@@ -7,17 +7,55 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/gomarkdown/markdown"
+	"github.com/gomarkdown/markdown/html"
 )
 
 const MDSuffix = ".md"
 const View = "view.md"
+const Pub = "pub"
 
 type NavbarTreeFile struct {
 	path     string
 	base     string
 	level    int
 	dir      bool
+	subtree  *[]NavbarTreeFile
 	intended bool
+}
+
+func RenderList(elems []NavbarTreeFile) string {
+	var ul string
+	ul += "<ul>"
+	for _, s := range elems {
+		ul += s.Render()
+	}
+	ul += "</ul>"
+	return ul
+}
+
+func (v NavbarTreeFile) Render() string {
+	var li string
+	li += "<li>"
+	li += "<a href=\"/" + v.path + "\" style=\"font-weight: bold;\">"
+	if v.intended {
+		li += "+"
+	} else {
+		li += "-"
+	}
+	li += v.base
+	if v.dir {
+		li += "/"
+	}
+	li += "</a>"
+	li += "</li>"
+	if len(*v.subtree) > 0 {
+		li += "<li>"
+		li += RenderList(*v.subtree)
+		li += "</li>"
+	}
+	return li
 }
 
 type GenContext struct {
@@ -54,10 +92,10 @@ func getTree(path string, goal string, files *[]NavbarTreeFile, level int) {
 				base:     basePath,
 				level:    level,
 				dir:      info.IsDir(),
+				subtree:  postTree,
 				intended: intended,
 			}
 			*files = append(*files, navbarElem)
-			*files = append(*files, *postTree...)
 		}
 
 		if info.IsDir() {
@@ -68,35 +106,51 @@ func getTree(path string, goal string, files *[]NavbarTreeFile, level int) {
 	})
 }
 
-func generateNavbarTree(gctx GenContext) string {
+func RenderNavbar(gctx GenContext) string {
 	var nav string
-
+	nav += "<nav>"
 	var files *[]NavbarTreeFile = &[]NavbarTreeFile{}
-	getTree(".", gctx.path[2:], files, 0)
-	for _, s := range *files {
-		nav += "<a href=\"/" + s.path
-		if s.dir {
-			nav += "/"
-		}
-		nav += "\">"
-		nav += strings.Repeat("&nbsp;", s.level*4)
-		if s.intended {
-			nav += "+"
-		} else {
-			nav += "-"
-		}
-		nav += s.base
-		nav += "</a>"
-		nav += "<br />"
-	}
+	*files = append(*files, NavbarTreeFile{
+		path:     "",
+		base:     "",
+		level:    0,
+		dir:      true,
+		subtree:  &[]NavbarTreeFile{},
+		intended: true,
+	})
+	getTree(".", gctx.path[2:], (*files)[0].subtree, 0)
+	nav += RenderList(*files)
+	nav += "</nav>"
 	return nav
+}
+
+func RenderBody(gctx GenContext) string {
+	var body string
+	body += "<body>"
+	body += RenderNavbar(gctx)
+	body += "<article class =\"rest\">"
+	article, _ := ioutil.ReadFile(gctx.path)
+
+	htmlFlags := html.CommonFlags | html.HrefTargetBlank
+	opts := html.RendererOptions{Flags: htmlFlags}
+	renderer := html.NewRenderer(opts)
+	md := article
+	html := markdown.ToHTML(md, nil, renderer)
+	body += string(html)
+	body += "</article>"
+	body += "</body>"
+	return body
 }
 
 func generateASMDHTML(gctx GenContext) string {
 	// Temporary
 	var code string
 	code += "<html>"
-	code += generateNavbarTree(gctx)
+	code += "<style rel=\"stylesheet\">"
+	style, _ := ioutil.ReadFile("style.css")
+	code += string(style)
+	code += "</style>"
+	code += RenderBody(gctx)
 	code += "</html>"
 	return code
 }
@@ -158,6 +212,11 @@ RetryMD:
 }
 
 func main() {
+	err := os.Chdir(Pub)
+	if err != nil {
+		fmt.Println("No pub folder.")
+		os.Exit(1)
+	}
 	http.HandleFunc("/", handler)
 	fmt.Println("Serving localhost")
 	http.ListenAndServe(":8080", nil)
