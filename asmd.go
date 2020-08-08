@@ -15,6 +15,7 @@ import (
 const MDSuffix = ".md"
 const View = "view.md"
 const Pub = "pub"
+const Style = "style.css"
 
 type NavbarTreeFile struct {
 	path     string
@@ -68,6 +69,8 @@ func notFound(w http.ResponseWriter, r *http.Request) {
 }
 
 func getTree(path string, goal string, files *[]NavbarTreeFile, level int) {
+	/* TODO(aosync): Basically make this function a lot better. For example by properly using
+	the `path` functions. */
 	filepath.Walk(path, func(p string, info os.FileInfo, err error) error {
 		basePath := filepath.Base(p)
 
@@ -124,36 +127,62 @@ func RenderNavbar(gctx GenContext) string {
 	return nav
 }
 
-func RenderBody(gctx GenContext) string {
-	var body string
-	body += "<body>"
-	body += RenderNavbar(gctx)
-	body += "<article class=\"rest\">"
-	article, _ := ioutil.ReadFile(gctx.path)
+func RenderArticle(gctx GenContext) string {
+	var article string
+	article += "<article class=\"rest\">"
+
+	art, err := ioutil.ReadFile(gctx.path)
+	if err != nil {
+		return ""
+	}
 
 	htmlFlags := html.CommonFlags | html.HrefTargetBlank
 	opts := html.RendererOptions{Flags: htmlFlags}
 	renderer := html.NewRenderer(opts)
-	md := article
+
+	md := art
 	html := markdown.ToHTML(md, nil, renderer)
-	body += string(html)
-	body += "</article>"
+
+	article += string(html)
+	article += "</article>"
+
+	return article
+}
+
+func RenderBody(gctx GenContext) string {
+	var body string
+	body += "<body>"
+	body += RenderNavbar(gctx)
+	body += RenderArticle(gctx)
 	body += "</body>"
 	return body
 }
 
+func RenderStyle() string {
+	var style string
+
+	style += "<style rel=\"stylesheet\">"
+
+	css, err := ioutil.ReadFile(Style)
+	if err != nil {
+		return ""
+	}
+
+	style += string(css)
+	style += "</style>"
+
+	return style
+}
+
 func RenderPage(gctx GenContext) string {
 	// Temporary
-	var code string
-	code += "<!doctype html>"
-	code += "<html>"
-	code += "<style rel=\"stylesheet\">"
-	style, _ := ioutil.ReadFile("style.css")
-	code += string(style)
-	code += "</style>"
-	code += RenderBody(gctx)
-	code += "</html>"
-	return code
+	var html string
+	html += "<!doctype html>"
+	html += "<html>"
+	html += RenderStyle()
+	html += RenderBody(gctx)
+	html += "</html>"
+	return html
 }
 
 func handler(w http.ResponseWriter, r *http.Request) {
@@ -213,7 +242,7 @@ RetryMD:
 }
 
 func main() {
-	err := os.Chdir(Pub)
+	err := os.Chdir(Pub) // This is bad, I shall get rid of this.
 	if err != nil {
 		fmt.Println("No pub folder.")
 		os.Exit(1)
