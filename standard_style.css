@@ -1,0 +1,9 @@
+/* Standard style, inspired by werc web page on cat-v.org */
+
+body { display: flex; flex-wrap: wrap; font-family: sans; }
+.rest { flex-basis: 60%; padding-left: 1em; }
+body > nav { flex-basis: content; padding-right: 1vw; min-width: 16em; }
+nav a { text-decoration: none; font-weight: bold; color: inherit; }
+nav ul { display: flex; flex-direction: column; list-style-type: none; list-style-position: outside; padding-left: 0; padding-top: 0em; }
+nav li ul { padding-left: 0.6em; }
+

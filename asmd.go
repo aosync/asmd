@@ -16,6 +16,8 @@ import (
 const MDSuffix = ".md"
 const View = "view.md"
 
+const DefaultSubd = "default"
+
 const Assets = "assets"
 const Pub = "pub"
 
@@ -71,6 +73,7 @@ func (v NavbarTreeFile) Render() string {
 type GenContext struct {
 	base string
 	path string
+	subd string
 }
 
 func notFound(w http.ResponseWriter, r *http.Request) {
@@ -80,10 +83,17 @@ func notFound(w http.ResponseWriter, r *http.Request) {
 func getTree(reqPath string, goal string, files *[]NavbarTreeFile, level int) {
 	/* TODO(aosync): Basically make this function a lot better. For example by properly using
 	the `path` functions. */
+	reqPath, errC := filepath.EvalSymlinks(reqPath)
+	goal, errG := filepath.EvalSymlinks(goal)
+	if errC != nil || errG != nil {
+		return
+	}
 	filepath.Walk(reqPath, func(p string, info os.FileInfo, err error) error {
 		splitted := strings.Split(p, string(os.PathSeparator))
-		splitted = splitted[1:] /* splitted[2:] when subdomain handling */
+		splitted = splitted[2:]
 		sanitizedLink := strings.Join(splitted, string(os.PathSeparator))
+		/* The link needs to be sanitized from any pub/subdomain before being used into the links */
+
 		basePath := filepath.Base(p)
 
 		if p == reqPath {
@@ -133,7 +143,7 @@ func RenderNavbar(gctx GenContext) string {
 		subtree:  &[]NavbarTreeFile{},
 		intended: true,
 	})
-	getTree(Pub, gctx.path, (*files)[0].subtree, 0) /* path.Join(Pub, Subblog) */
+	getTree(path.Join(Pub, gctx.subd), gctx.path, (*files)[0].subtree, 0) /* path.Join(Pub, Subblog) */
 	nav += RenderList(*files)
 	nav += "</nav>"
 	return nav
@@ -170,12 +180,12 @@ func RenderBody(gctx GenContext) string {
 	return body
 }
 
-func RenderStyle() string {
+func RenderStyle(gctx GenContext) string {
 	var style string
 
 	style += "<style rel=\"stylesheet\">"
 
-	css, err := ioutil.ReadFile(path.Join(Pub, Style))
+	css, err := ioutil.ReadFile(path.Join(Pub, gctx.subd, Style))
 	if err != nil {
 		return ""
 	}
@@ -190,7 +200,7 @@ func RenderPage(gctx GenContext) string {
 	var html string
 	html += "<!doctype html>"
 	html += "<html>"
-	html += RenderStyle()
+	html += RenderStyle(gctx)
 	html += RenderBody(gctx)
 	html += "</html>"
 	return html
@@ -199,12 +209,14 @@ func RenderPage(gctx GenContext) string {
 func handler(w http.ResponseWriter, r *http.Request) {
 	fmt.Println("Received something.") // For debug purposes
 
-	reqPath := r.URL.Path[1:]
-	if reqPath == "" {
-		reqPath = "."
+	subd := strings.Split(r.Host, ".")[0]
+	_, err := os.Stat(path.Join(Pub, subd))
+	if err != nil {
+		subd = DefaultSubd
 	}
-	reqPath = path.Join(Pub, reqPath)
-	fmt.Println(reqPath)
+	reqPath := r.URL.Path[1:]
+	reqPath = path.Clean(reqPath)
+	reqPath = path.Join(Pub, subd, reqPath) /* (Pub, subd, reqPath) */
 
 	retried := false
 
@@ -240,6 +252,7 @@ RetryMD:
 		view := RenderPage(GenContext{
 			base: reqPath,
 			path: viewPath,
+			subd: subd,
 		})
 		w.Write([]byte(view))
 
@@ -248,6 +261,7 @@ RetryMD:
 		view := RenderPage(GenContext{
 			base: filepath.Dir(reqPath),
 			path: reqPath,
+			subd: subd,
 		})
 		w.Write([]byte(view))
 
