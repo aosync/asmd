@@ -6,7 +6,7 @@ header { flex-basis: 100%; margin-bottom: 1em; }
 body > nav { flex-basis: content; padding-right: 1vw; min-width: 16em; }
 nav a { text-decoration: none; font-weight: bold; color: inherit; }
 header a { text-decoration: none; font-weight: bold; color: inherit; }
-nav ul { display: flex; flex-direction: column; list-style-type: none; list-style-position: outside; padding: 0em; margin: 0em; }
+nav ul { display: flex; flex-direction: column; list-style-type: none; list-style-position: outside; padding: 0em; }
 nav li ul { padding-left: 0.6em; }
 
 .nav-intended::before { content: '»'; }
