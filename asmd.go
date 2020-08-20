@@ -22,8 +22,6 @@ const Assets = "assets"
 const Pub = "pub"
 
 const Style = "assets/style.css"
-const Title = "assets/title"
-const Subtitle = "assets/subtitle"
 
 type NavbarTreeFile struct {
 	path     string
@@ -198,6 +196,7 @@ func RenderPage(gctx GenContext) string {
 	var html string
 	html += "<!doctype html>"
 	html += "<html>"
+	html += "<title>" + gctx.subd + "</title>"
 	html += RenderStyle(gctx)
 	html += RenderBody(gctx)
 	html += "</html>"
