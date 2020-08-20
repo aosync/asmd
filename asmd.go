@@ -25,9 +25,6 @@ const Style = "assets/style.css"
 const Title = "assets/title"
 const Subtitle = "assets/subtitle"
 
-const Intended = "»"
-const NotIntended = "-"
-
 type NavbarTreeFile struct {
 	path     string
 	base     string
@@ -52,9 +49,9 @@ func (v NavbarTreeFile) Render() string {
 	li += "<li>"
 	li += "<a href=\"/" + v.path + "\">"
 	if v.intended {
-		li += Intended
+		li += "<span class=\"nav-intended\"></span>"
 	} else {
-		li += NotIntended
+		li += "<span class=\"nav-not-intended\"></span>"
 	}
 	li += v.base
 	if v.dir {
@@ -174,6 +171,7 @@ func RenderArticle(gctx GenContext) string {
 func RenderBody(gctx GenContext) string {
 	var body string
 	body += "<body>"
+	body += "<header><a href=\"/\"><h1 id=\"title\"></h1><h3 id=\"subtitle\"></h3></a></header>"
 	body += RenderNavbar(gctx)
 	body += RenderArticle(gctx)
 	body += "</body>"
@@ -236,12 +234,7 @@ RetryMD:
 	}
 
 	if f.IsDir() {
-		// TODO(aosync): Use correct path manipulation, notably with path.Join
-		if !strings.HasSuffix(reqPath, "/") {
-			reqPath += "/"
-		}
-
-		viewPath := reqPath + View
+		viewPath := path.Join(reqPath, View)
 		_, err := os.Stat(viewPath)
 
 		if err != nil {
