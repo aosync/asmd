@@ -24,10 +24,8 @@ const Pub = "pub"
 const Style = "assets/style.css"
 
 type NavbarTreeFile struct {
-	path     string
+	link     string
 	base     string
-	level    int
-	dir      bool
 	subtree  *[]NavbarTreeFile
 	intended bool
 }
@@ -45,16 +43,13 @@ func RenderList(elems []NavbarTreeFile) string {
 func (v NavbarTreeFile) Render() string {
 	var li string
 	li += "<li>"
-	li += "<a href=\"/" + v.path + "\">"
+	li += "<a href=\"/" + v.link + "\">"
 	if v.intended {
 		li += "<span class=\"nav-intended\"></span>"
 	} else {
 		li += "<span class=\"nav-not-intended\"></span>"
 	}
 	li += v.base
-	if v.dir {
-		li += "/"
-	}
 	li += "</a>"
 	li += "</li>"
 	if len(*v.subtree) > 0 {
@@ -75,50 +70,59 @@ func notFound(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte("Path not found."))
 }
 
-func getTree(reqPath string, goal string, files *[]NavbarTreeFile, level int) {
-	/* TODO(aosync): Basically make this function a lot better. For example by properly using
-	the `path` functions. */
+func removeMountpoint(requestedPath string) string {
+	sep := string(os.PathSeparator)
+	splitted := strings.Split(requestedPath, sep)
+	splitted = splitted[2:]
+	return strings.Join(splitted, sep)
+}
+
+func pathStartsWith(path string, start string) bool {
+	return strings.HasPrefix(path+"/", start+"/")
+}
+
+func getTree(reqPath string, goal string, files *[]NavbarTreeFile) {
+	/* Symlinks must be evalled for them to work in filepath.Walk */
 	reqPath, errC := filepath.EvalSymlinks(reqPath)
 	goal, errG := filepath.EvalSymlinks(goal)
 	if errC != nil || errG != nil {
 		return
 	}
-	filepath.Walk(reqPath, func(p string, info os.FileInfo, err error) error {
-		splitted := strings.Split(p, string(os.PathSeparator))
-		splitted = splitted[2:]
-		sanitizedLink := strings.Join(splitted, string(os.PathSeparator))
-		/* The link needs to be sanitized from any pub/subdomain before being used into the links */
 
-		basePath := filepath.Base(p)
-
-		if p == reqPath {
+	filepath.Walk(reqPath, func(current string, info os.FileInfo, err error) error {
+		if current == reqPath {
+			/* Ignore current folder of iteration */
 			return nil
 		}
 
-		var postTree *[]NavbarTreeFile = &[]NavbarTreeFile{}
-		intended := false
-
-		// TODO(aosync): There is certainly a way to improve this.
-		if strings.HasPrefix(goal+"/", p+"/") {
-			intended = true
-			if info.IsDir() {
-				getTree(p, goal, postTree, level+1)
-			}
-		}
+		dir := info.IsDir()
+		/* The link needs to be sanitized from any pub/subdomain before being used into the links */
+		link := removeMountpoint(current)
+		basePath := filepath.Base(current)
 
 		if basePath != View && basePath != Assets {
-			navbarElem := NavbarTreeFile{
-				path:     sanitizedLink,
+			subtree := &[]NavbarTreeFile{}
+			intended := false
+
+			if pathStartsWith(goal, current) {
+				intended = true
+				if dir {
+					getTree(current, goal, subtree)
+				}
+			}
+			if dir {
+				basePath += "/"
+			}
+			element := NavbarTreeFile{
+				link:     link,
 				base:     basePath,
-				level:    level,
-				dir:      info.IsDir(),
-				subtree:  postTree,
+				subtree:  subtree,
 				intended: intended,
 			}
-			*files = append(*files, navbarElem)
+			*files = append(*files, element)
 		}
 
-		if info.IsDir() {
+		if dir {
 			return filepath.SkipDir
 		}
 
@@ -129,17 +133,15 @@ func getTree(reqPath string, goal string, files *[]NavbarTreeFile, level int) {
 func RenderNavbar(gctx GenContext) string {
 	var nav string
 	nav += "<nav>"
-	var files *[]NavbarTreeFile = &[]NavbarTreeFile{}
-	*files = append(*files, NavbarTreeFile{
-		path:     "",
-		base:     "",
-		level:    0,
-		dir:      true,
+	begin := NavbarTreeFile{
+		link:     "",
+		base:     "/",
 		subtree:  &[]NavbarTreeFile{},
 		intended: true,
-	})
-	getTree(path.Join(Pub, gctx.subd), gctx.path, (*files)[0].subtree, 0) /* path.Join(Pub, Subblog) */
-	nav += RenderList(*files)
+	}
+	getTree(path.Join(Pub, gctx.subd), gctx.path, begin.subtree)
+	tree := &[]NavbarTreeFile{begin}
+	nav += RenderList(*tree)
 	nav += "</nav>"
 	return nav
 }
@@ -265,11 +267,6 @@ RetryMD:
 }
 
 func main() {
-	/* err := os.Chdir(Pub) // This is bad, I shall get rid of this.
-	if err != nil {
-		fmt.Println("No pub folder.")
-		os.Exit(1)
-	} */
 	http.HandleFunc("/", handler)
 	fmt.Println("Serving localhost")
 	http.ListenAndServe(":8080", nil)
