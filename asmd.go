@@ -5,6 +5,7 @@ import (
 	"io/ioutil"
 	"net/http"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 
@@ -14,8 +15,16 @@ import (
 
 const MDSuffix = ".md"
 const View = "view.md"
+
+const Assets = "assets"
 const Pub = "pub"
-const Style = "style.css"
+
+const Style = "assets/style.css"
+const Title = "assets/title"
+const Subtitle = "assets/subtitle"
+
+const Intended = "»"
+const NotIntended = "-"
 
 type NavbarTreeFile struct {
 	path     string
@@ -41,9 +50,9 @@ func (v NavbarTreeFile) Render() string {
 	li += "<li>"
 	li += "<a href=\"/" + v.path + "\">"
 	if v.intended {
-		li += "+"
+		li += Intended
 	} else {
-		li += "-"
+		li += NotIntended
 	}
 	li += v.base
 	if v.dir {
@@ -68,13 +77,16 @@ func notFound(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte("Path not found."))
 }
 
-func getTree(path string, goal string, files *[]NavbarTreeFile, level int) {
+func getTree(reqPath string, goal string, files *[]NavbarTreeFile, level int) {
 	/* TODO(aosync): Basically make this function a lot better. For example by properly using
 	the `path` functions. */
-	filepath.Walk(path, func(p string, info os.FileInfo, err error) error {
+	filepath.Walk(reqPath, func(p string, info os.FileInfo, err error) error {
+		splitted := strings.Split(p, string(os.PathSeparator))
+		splitted = splitted[1:] /* splitted[2:] when subdomain handling */
+		sanitizedLink := strings.Join(splitted, string(os.PathSeparator))
 		basePath := filepath.Base(p)
 
-		if p == path {
+		if p == reqPath {
 			return nil
 		}
 
@@ -89,9 +101,9 @@ func getTree(path string, goal string, files *[]NavbarTreeFile, level int) {
 			}
 		}
 
-		if basePath != View {
+		if basePath != View && basePath != Assets {
 			navbarElem := NavbarTreeFile{
-				path:     p,
+				path:     sanitizedLink,
 				base:     basePath,
 				level:    level,
 				dir:      info.IsDir(),
@@ -121,7 +133,7 @@ func RenderNavbar(gctx GenContext) string {
 		subtree:  &[]NavbarTreeFile{},
 		intended: true,
 	})
-	getTree(".", gctx.path[2:], (*files)[0].subtree, 0)
+	getTree(Pub, gctx.path, (*files)[0].subtree, 0) /* path.Join(Pub, Subblog) */
 	nav += RenderList(*files)
 	nav += "</nav>"
 	return nav
@@ -163,7 +175,7 @@ func RenderStyle() string {
 
 	style += "<style rel=\"stylesheet\">"
 
-	css, err := ioutil.ReadFile(Style)
+	css, err := ioutil.ReadFile(path.Join(Pub, Style))
 	if err != nil {
 		return ""
 	}
@@ -175,7 +187,6 @@ func RenderStyle() string {
 }
 
 func RenderPage(gctx GenContext) string {
-	// Temporary
 	var html string
 	html += "<!doctype html>"
 	html += "<html>"
@@ -188,15 +199,21 @@ func RenderPage(gctx GenContext) string {
 func handler(w http.ResponseWriter, r *http.Request) {
 	fmt.Println("Received something.") // For debug purposes
 
-	path := "." + r.URL.Path
+	reqPath := r.URL.Path[1:]
+	if reqPath == "" {
+		reqPath = "."
+	}
+	reqPath = path.Join(Pub, reqPath)
+	fmt.Println(reqPath)
+
 	retried := false
 
 RetryMD:
-	f, err := os.Stat(path)
+	f, err := os.Stat(reqPath)
 
 	if err != nil {
 		if !retried {
-			path = path + MDSuffix
+			reqPath = reqPath + MDSuffix
 			retried = true
 
 			goto RetryMD
@@ -208,11 +225,11 @@ RetryMD:
 
 	if f.IsDir() {
 		// TODO(aosync): Use correct path manipulation, notably with path.Join
-		if !strings.HasSuffix(path, "/") {
-			path += "/"
+		if !strings.HasSuffix(reqPath, "/") {
+			reqPath += "/"
 		}
 
-		viewPath := path + View
+		viewPath := reqPath + View
 		_, err := os.Stat(viewPath)
 
 		if err != nil {
@@ -221,32 +238,32 @@ RetryMD:
 		}
 
 		view := RenderPage(GenContext{
-			base: path,
+			base: reqPath,
 			path: viewPath,
 		})
 		w.Write([]byte(view))
 
 		return
-	} else if strings.HasSuffix(path, MDSuffix) {
+	} else if strings.HasSuffix(reqPath, MDSuffix) {
 		view := RenderPage(GenContext{
-			base: filepath.Dir(path),
-			path: path,
+			base: filepath.Dir(reqPath),
+			path: reqPath,
 		})
 		w.Write([]byte(view))
 
 		return
 	}
 
-	contents, _ := ioutil.ReadFile(path)
+	contents, _ := ioutil.ReadFile(reqPath)
 	w.Write(contents)
 }
 
 func main() {
-	err := os.Chdir(Pub) // This is bad, I shall get rid of this.
+	/* err := os.Chdir(Pub) // This is bad, I shall get rid of this.
 	if err != nil {
 		fmt.Println("No pub folder.")
 		os.Exit(1)
-	}
+	} */
 	http.HandleFunc("/", handler)
 	fmt.Println("Serving localhost")
 	http.ListenAndServe(":8080", nil)
